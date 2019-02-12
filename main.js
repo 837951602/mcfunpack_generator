@@ -63,6 +63,10 @@ function localName() {
 	return 'temp' + ++localName.t;
 }
 localName.t = 0;
+function macroName() {
+	return '\u8888' + ++localName.t;
+}
+macroName.t = 0;
 function fcaller(n) {
 	var t = n.match(/^(.*?):(.*)$/) || [0,defNamespace,n];
 	t[0] = 'function '+(t[1]==='minecraft'?'':t[1]+':')+t[2];
@@ -133,7 +137,7 @@ function g(args, arr) {
 		} else if (t = /^#macro\s([:A-Za-z0-9_$]+)\s(.+)\s{$/.exec(str)) {
 			macro (t[1], t[2].split(','));
 		} else if (t = /^#for\s([:A-Za-z0-9_$]+)\s*=(.+)\s{$/.exec(str)) {
-			var nam = localName(), nums = t[2].replace(
+			var nam = macroName(), nums = t[2].replace(
 				/(-?\d*)([\(\[])(-?\d*),(-?\d*)([\]\)])/g,
 				function(r,step,tb,b,e,te){
 					r=[];step=+step;b=+b;e=+e;
@@ -146,10 +150,10 @@ function g(args, arr) {
 			).replace(/,/g,'\n').replace(/.*/g,nam+' $&');
 			macro (nam, [t[1]]);
 			fCont.unshift.apply(fCont, nums);
-		} else if ((t = /^([:A-Za-z0-9_$]+)\s(.*)$/) && macro[1+t[1]]){
+		} else if ((t = /^([:A-Za-z0-9_$]+)\s(.*)$/.exec(str)) && macro[1+t[1]]){
 			fCont.unshift.apply(fCont, macro[1+t[1]]);
-			var obj = {}, lst = macro[1+t[1]], ags = t[2].split(',');
-			for (var i in lst) obj[1+lst[i]] = /\S(?:.*\S)?/.exec(ags[i]||'')[0];
+			var obj = {}, lst = macro[1+t[1]].args, ags = t[2].split(',');
+			for (var i=0; i<lst.length; ++i) obj[1+lst[i]] = /\S(?:.*\S)?|/.exec(ags[i]||'')[0];
 			g(obj, arr);
 		} else {
 			WScript.Echo (str);
@@ -158,11 +162,12 @@ function g(args, arr) {
 	}
 }
 function macro(nam, args) {
+	for (var i=0; i<args.length; ++i) args[i] = args[i] || '*';
 	var m = [];
-	m.nam = nam;
+	m.args = args;
 	while (1) {
 		var s = getCont();
-		if (s.test(/^\s*#}\s*$/)) {
+		if (/^\s*#}\s*$/.test(s)) {
 			m.push ('}');
 			return macro[1+nam] = m;
 		}
