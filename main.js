@@ -140,23 +140,23 @@ function g(args, arr) {
 			var nam = macroName(), nums = t[2].replace(
 				/(-?\d*)([\(\[])(-?\d*),(-?\d*)([\]\)])/g,
 				function(r,step,tb,b,e,te){
-					r=[];step=+step;b=+b;e=+e;
+					r=[];step=step?+step:1;b=+b;e=+e;
 					for(var i=b; (i-e)*step<0; i+=step) {
 						(tb=='('&&i==b) || r.push (i);
 					}
 					if (te==']' && e==i) r.push (i);
 					return r;
 				}
-			).replace(/,/g,'\n').replace(/.*/g,nam+' $&');
+			).replace(/,/g,'\n').replace(/^.*$/mg,nam+' $&');
 			macro (nam, [t[1]]);
-			fCont.unshift.apply(fCont, nums);
-		} else if ((t = /^([:A-Za-z0-9_$]+)\s(.*)$/.exec(str)) && macro[1+t[1]]){
+			fCont.unshift.apply(fCont, nums.split('\n'));
+		} else if ((t = /^([:A-Za-z0-9_$\u8888]+)(\s.*)?$/.exec(str)) && macro[1+t[1]]){
 			fCont.unshift.apply(fCont, macro[1+t[1]]);
 			var obj = {}, lst = macro[1+t[1]].args, ags = t[2].split(',');
-			for (var i=0; i<lst.length; ++i) obj[1+lst[i]] = /\S(?:.*\S)?|/.exec(ags[i]||'')[0];
+			for (var i=0; i<lst.length; ++i) (obj[1+lst[i]] = /\S(?:.*\S)?/.exec(ags[i]||'')||[])[0];
 			g(obj, arr);
 		} else {
-			WScript.Echo (str);
+			WScript.Echo (str + '\n' + t);
 			throw 'ERROR';
 		}
 	}
