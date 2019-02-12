@@ -64,7 +64,7 @@ function localName() {
 }
 localName.t = 0;
 function macroName() {
-	return '\u8888' + ++localName.t;
+	return '\u8888' + ++macroName.t;
 }
 macroName.t = 0;
 function fcaller(n) {
