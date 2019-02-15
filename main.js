@@ -84,13 +84,16 @@ function f(n, i0, i1) {
 }
 
 // Parser
+var VALID_EXPR = /^(?:\d+(?:\.\d*)?(?:e[\+\-]?\d+)?|[+\-\*\/%\(\)\!\&\|<>\s]|<=|>=|!=|==)*$/m;
 var vars = {'':'%'};
 function g(args, arr) {
-	var str, t, lbkp = {}, i;
+	var str, kstr, t, lbkp = {}, i;
 	arr = arr || [];
+	var ifstate = false;
 	if(args) for (var i in args) lbkp[i] = vars[i], vars[i] = args[i];
 	while (1) {
-		str = /\S(?:.*\S)?/.exec(getCont())[0].replace(/%([:A-Za-z0-9_$]*)%/g,function(_,n){return vars[1+n]||''});
+		// Also appear in #while
+		str = /\S(?:.*\S)?/.exec(kstr=getCont())[0].replace(/%([:A-Za-z0-9_$]*)%/g,function(_,n){return vars[1+n]||''});
 		if (str == '}') {
 			for (var i in lbkp) vars[i] = lbkp[i];
 			return arr;
@@ -107,8 +110,8 @@ function g(args, arr) {
 			vars[1+t[1]] = vars[1+t[2]];
 		} else if (t = /^set=\s([:A-Za-z0-9_$]+)\s*=(.*)$/.exec(str)) {
 			try {
-				if (!/^(?:\d+(?:\.\d*)?(?:e[\+\-]?\d+)?|[+\-\*\/%\(\)\!\&\|\s])*$/m.test(t[2])) throw 0;
-				vars[1+t[1]] = eval(t[2]);
+				if (!VALID_EXPR.test(t[2])) throw 0;
+				vars[1+t[1]] = eval(t[2])+'';
 			} catch(e) {
 				WScript.Echo(t[2]);
 				throw 'Invalid Expression';
@@ -136,8 +139,11 @@ function g(args, arr) {
 			}
 		} else if (t = /^#macro\s([:A-Za-z0-9_$]+)\s(.+)\s{$/.exec(str)) {
 			macro (t[1], t[2].split(','));
+		} else if (str == '#') {
 		} else if (t = /^#for\s([:A-Za-z0-9_$]+)\s*=(.+)\s{$/.exec(str)) {
-			var nam = macroName(), nums = t[2].replace(
+			var nam = macroName(), obj={};
+			macro (nam, [t[1]]);
+			t[2].replace(
 				/(-?\d*)([\(\[])(-?\d*),(-?\d*)([\]\)])/g,
 				function(r,step,tb,b,e,te){
 					r=[];step=step?+step:1;b=+b;e=+e;
@@ -147,10 +153,76 @@ function g(args, arr) {
 					if (te==']' && e==i) r.push (i);
 					return r;
 				}
-			).replace(/,/g,'\n').replace(/^.*$/mg,nam+' $&');
-			macro (nam, [t[1]]);
-			fCont.unshift.apply(fCont, nums.split('\n'));
-		} else if ((t = /^([:A-Za-z0-9_$\u8888]+)(\s.*)?$/.exec(str)) && macro[1+t[1]]){
+			).replace(/,/g,'\n').replace(/^.*$/mg,
+				function(s){
+					obj[1+t[1]]=s;
+					fCont.unshift.apply(fCont, macro[1+nam]);
+					g(obj, arr);
+				}
+			);
+			delete macro[1+nam];
+		} else if (t = /^#while\s(.*)\s{$/.exec(str)) {
+			var nam = macroName();
+			macro (nam, []);
+			while (1) {
+				str = /\S(?:.*\S)?/.exec(kstr)[0].replace(/%([:A-Za-z0-9_$]*)%/g,function(_,n){return vars[1+n]||''});
+				if (!(t = /^#while\s(.*)\s{$/.exec(str))) throw '#while format broken';
+				try {
+					if (!VALID_EXPR.test(t[1])) throw 0;
+					var r = eval(t[1]);
+				} catch(e) {
+					WScript.Echo(t[2]);
+					throw 'Invalid Expression';
+				}
+				if(!r) break;
+				fCont.unshift.apply(fCont, macro[1+nam]);
+				g({}, arr);
+			}
+			delete macro[1+nam];
+		} else if (t = /^#if\s(.*)\s{$/.exec(str)) {
+			var nam = '\u8888:if';
+			macro (nam, []);
+			try {
+				if (!VALID_EXPR.test(t[1])) throw 0;
+				var r = eval(t[1]);
+			} catch(e) {
+				WScript.Echo(t[2]);
+				throw 'Invalid Expression';
+			}
+			if (r) {
+				ifstate=false;
+				fCont.unshift.apply(fCont, macro[1+nam]);
+				g({}, arr);
+			} else ifstate=true;
+		} else if (t = /^#else\sif\s(.*)\s{$/.exec(str)) {
+			var nam = '\u8888:if';
+			macro (nam, []);
+			if(ifstate) {
+				try {
+					if (!VALID_EXPR.test(t[1])) throw 0;
+					var r = eval(t[1]);
+				} catch(e) {
+					WScript.Echo(t[2]);
+					throw 'Invalid Expression';
+				}
+				if (r) {
+					ifstate=false;
+					fCont.unshift.apply(fCont, macro[1+nam]);
+					g({}, arr);
+				} else ifstate=true;
+			}
+		} else if (t = /^#else\s{$/.exec(str)) {
+			var nam = '\u8888:if';
+			macro (nam, []);
+			if(ifstate) {
+				ifstate=false;
+				fCont.unshift.apply(fCont, macro[1+nam]);
+				g({}, arr);
+			}
+		} else if (t = /^#include (.*)$/.exec(str)) {
+			fCont.unshift.apply(fCont, file(t[1]).concat('}'));
+			g({}, arr);
+		} else if ((t = /^([:A-Za-z0-9_$]+)(\s.*)?$/.exec(str)) && macro[1+t[1]]){
 			fCont.unshift.apply(fCont, macro[1+t[1]]);
 			var obj = {}, lst = macro[1+t[1]].args, ags = t[2].split(',');
 			for (var i=0; i<lst.length; ++i) (obj[1+lst[i]] = /\S(?:.*\S)?/.exec(ags[i]||'')||[])[0];
@@ -166,9 +238,10 @@ function macro(nam, args) {
 	var m = [];
 	m.args = args;
 	while (1) {
-		var s = getCont();
-		if (/^\s*#}\s*$/.test(s)) {
+		var s = getCont(), t;
+		if (t=/^\s*#}\s*(.*)$/.exec(s)) {
 			m.push ('}');
+			fCont.unshift('#'+t[1]);
 			return macro[1+nam] = m;
 		}
 		m.push(s.replace(/^\s*#\\/,'#'));
